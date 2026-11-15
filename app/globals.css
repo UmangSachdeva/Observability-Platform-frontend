@@ -1145,3 +1145,9 @@ a.integrate-copy { text-decoration: none; }
 /* Grouped errors */
 .error-count { margin-left: 8px; padding: 1px 6px; border-radius: 999px; background: rgba(155,142,255,.14); color: #cfc8ff; font: 600 8.5px var(--font-geist-mono), monospace; vertical-align: 1px; }
 .occurrence-plain { color: #c9c8d6; }
+
+.waterfall-duration.inside { top: 3px; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.span-events { grid-template-columns: minmax(0, 1fr); }
+.span-events li { min-width: 0; }
+.span-stack { max-width: 100%; }
+.span-details .error-attributes td code { overflow-wrap: anywhere; }

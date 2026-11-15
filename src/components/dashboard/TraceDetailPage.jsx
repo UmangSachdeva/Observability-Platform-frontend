@@ -116,7 +116,9 @@ function TraceView({ trace, projectId, initialSpan }) {
             {rows.map(({ span, hasChildren }) => {
               const left = (span.offset_ms / total) * 100;
               const width = Math.max(0.4, (span.duration_ms / total) * 100);
-              const labelOnLeft = left + width > 78;
+              // Put the duration after the bar; before it when the bar ends near
+              // the right edge; inside it when the bar fills the whole track.
+              const labelPlacement = left + width <= 78 ? "after" : left >= 12 ? "before" : "inside";
               const color = serviceColor(span.service_name);
               return (
                 <div key={span.span_id} role="treeitem" aria-level={span.depth + 1} aria-selected={span.span_id === selected.span_id} aria-expanded={hasChildren ? !collapsed.has(span.span_id) : undefined}
@@ -135,7 +137,8 @@ function TraceView({ trace, projectId, initialSpan }) {
                       {(span.events || []).map((event, index) => <i key={index} className={"waterfall-event" + (event.name === "exception" ? " exception" : "")} title={event.name}
                         style={{ left: Math.min(100, Math.max(0, ((event.offset_ms - span.offset_ms) / Math.max(span.duration_ms, 0.001)) * 100)) + "%" }} />)}
                     </span>
-                    <span className="waterfall-duration" style={labelOnLeft ? { right: (100 - left) + 1 + "%" } : { left: left + width + 1 + "%" }}>{formatDuration(span.duration_ms)}</span>
+                    <span className={"waterfall-duration" + (labelPlacement === "inside" ? " inside" : "")}
+                      style={labelPlacement === "after" ? { left: left + width + 1 + "%" } : labelPlacement === "before" ? { right: (100 - left) + 1 + "%" } : { right: (100 - left - width) + 0.8 + "%" }}>{formatDuration(span.duration_ms)}</span>
                   </span>
                 </div>
               );

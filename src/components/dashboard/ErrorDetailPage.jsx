@@ -261,15 +261,17 @@ function OccurrencesSection({ event }) {
 
 /** Occurrences over time: hourly buckets for the last day, daily buckets for longer spans. */
 function Histogram({ events }) {
-  const newest = new Date(events[0].received_at).getTime();
-  const oldest = new Date(events.at(-1).received_at).getTime();
+  // Bucketed by when each occurrence happened (its timestamp).
+  const times = events.map(item => new Date(item.timestamp).getTime());
+  const newest = Math.max(...times);
+  const oldest = Math.min(...times);
   const daily = newest - oldest > 36 * 60 * 60 * 1000;
   const bucketMs = daily ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
   const bucketCount = daily ? Math.min(30, Math.ceil((newest - oldest) / bucketMs) + 1) : 24;
   const end = newest;
   const buckets = Array.from({ length: bucketCount }, (_, index) => ({ start: end - (bucketCount - index) * bucketMs, count: 0 }));
   for (const item of events) {
-    const time = new Date(item.received_at).getTime();
+    const time = new Date(item.timestamp).getTime();
     const index = bucketCount - 1 - Math.floor((end - time) / bucketMs);
     if (index >= 0 && index < bucketCount) buckets[index].count += 1;
   }
