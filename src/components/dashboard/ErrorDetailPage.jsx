@@ -7,6 +7,7 @@ import { useDashboardData } from "./DashboardDataProvider";
 import { CopyButton } from "./apiKeys";
 import { timeAgo } from "./useProjectErrors";
 import { parseStackTrace } from "../../lib/stack-trace";
+import { traceDetailHref } from "./traceUtils";
 
 const OCCURRENCE_LIMIT = 500;
 // Attributes that usually carry the most useful context are listed first.
@@ -94,7 +95,9 @@ function ErrorHeader({ event, projectName }) {
         {projectName && <span className="error-detail-chip"><DashboardIcon name="sliders" size={11}/>{projectName}</span>}
       </div>
       <h1>{event.message}</h1>
-      <p className="error-detail-when">Occurred {timeAgo(event.timestamp)} · {new Date(event.timestamp).toLocaleString(undefined, { dateStyle: "full", timeStyle: "medium" })}</p>
+      <p className="error-detail-when">{(event.occurrence_count || 1) > 1
+        ? <>Seen <b>{event.occurrence_count} times</b> · last {timeAgo(event.timestamp)} · first {timeAgo(event.first_seen)}</>
+        : <>Occurred {timeAgo(event.timestamp)} · {new Date(event.timestamp).toLocaleString(undefined, { dateStyle: "full", timeStyle: "medium" })}</>}</p>
       <div className="error-detail-actions">
         <CopyButton value={origin + errorDetailHref(event)} label="Copy link" />
         <CopyButton value={event.message} label="Copy message" />
@@ -173,16 +176,23 @@ function DetailsSection({ event, projectName }) {
   const delayMs = received.getTime() - occurred.getTime();
   const rows = [
     ["Level", <span key="level" className={"error-level " + levelClass(event.level)}>{event.level}</span>],
+    ["Times seen", String(event.occurrence_count || 1)],
+    ["First seen", event.first_seen ? new Date(event.first_seen).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" }) : "—"],
     ["Service", event.service],
     ["Environment", event.environment || "Not set"],
     ["Project", projectName || event.project_id],
-    ["Occurred (local)", occurred.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" })],
+    ["Last occurred (local)", occurred.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" })],
     ["Occurred (UTC)", <code key="utc">{event.timestamp}</code>],
     ["Received (UTC)", <code key="received">{event.received_at}</code>],
     ["Delivery delay", formatDelay(delayMs)],
     ["Event ID", <span key="id" className="error-detail-copy-row"><code>{event.id}</code><CopyButton value={event.id} /></span>],
     ["Project ID", <code key="pid">{event.project_id}</code>],
   ];
+  if (event.trace_id) {
+    rows.push(["Trace", <Link key="trace" className="error-detail-trace-link" href={traceDetailHref(event.project_id, event.trace_id, event.span_id)}>
+      <code>{event.trace_id.slice(0, 16)}…</code> View waterfall <DashboardIcon name="arrow" size={11}/>
+    </Link>]);
+  }
   return (
     <section className="panel error-detail-section">
       <div className="error-detail-section-heading"><div><h2>Details</h2></div></div>
@@ -193,63 +203,57 @@ function DetailsSection({ event, projectName }) {
 
 /** Other events with the same message and service in this project, with simple statistics. */
 function OccurrencesSection({ event }) {
-  const [state, setState] = useState({ id: "", events: [], hasMore: false, error: "" });
+  const [state, setState] = useState({ id: "", data: null, error: "" });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const params = new URLSearchParams({ q: event.message.slice(0, 200), service: event.service, sort: "-received_at", limit: String(OCCURRENCE_LIMIT) });
-        const response = await fetch("/api/projects/" + encodeURIComponent(event.project_id) + "/errors?" + params, { cache: "no-store" });
+        const response = await fetch("/api/projects/" + encodeURIComponent(event.project_id) + "/errors/" + encodeURIComponent(event.id)
+          + "/occurrences?limit=" + OCCURRENCE_LIMIT, { cache: "no-store" });
         const data = await response.json().catch(() => ({}));
         if (cancelled) return;
         if (!response.ok) throw new Error(data?.error?.message || "Could not load occurrences.");
-        const matches = (Array.isArray(data?.errors) ? data.errors : []).filter(item => item.message === event.message);
-        setState({ id: event.id, events: matches, hasMore: Boolean(data?.has_more), error: "" });
+        setState({ id: event.id, data, error: "" });
       } catch (cause) {
-        if (!cancelled) setState({ id: event.id, events: [], hasMore: false, error: cause instanceof Error ? cause.message : "Could not load occurrences." });
+        if (!cancelled) setState({ id: event.id, data: null, error: cause instanceof Error ? cause.message : "Could not load occurrences." });
       }
     })();
     return () => { cancelled = true; };
   }, [event]);
 
   const loading = state.id !== event.id;
-  const occurrences = state.events;
-  const index = occurrences.findIndex(item => item.id === event.id);
-  const newer = index > 0 ? occurrences[index - 1] : null;
-  const older = index >= 0 && index < occurrences.length - 1 ? occurrences[index + 1] : null;
-  const environments = countBy(occurrences, item => item.environment || "Not set");
+  const occurrences = Array.isArray(state.data?.occurrences) ? state.data.occurrences : [];
+  const total = state.data?.total || event.occurrence_count || 1;
   const attributeBreakdown = breakdownAttributes(occurrences);
-  const count = occurrences.length;
-  const countLabel = `${count}${state.hasMore ? "+" : ""}`;
   const similarHref = "/dashboard/errors?" + new URLSearchParams({ q: event.message.slice(0, 200), service: event.service }).toString();
 
   return (
     <section className="panel error-detail-section">
-      <div className="error-detail-section-heading"><div><h2>Occurrences</h2><p>Same message from {event.service} in this project</p></div></div>
+      <div className="error-detail-section-heading"><div><h2>Occurrences</h2><p>Every time this exact error was reported. A different message is a separate error.</p></div></div>
       {loading ? <p className="integrate-hint">Loading occurrences…</p>
         : state.error ? <p className="form-error">{state.error}</p>
         : <>
           <div className="occurrence-stats">
-            <div><span>Times seen</span><b>{countLabel}</b></div>
-            <div><span>{state.hasMore ? "Earliest loaded" : "First seen"}</span><b title={occurrences.at(-1)?.received_at}>{occurrences.length ? timeAgo(occurrences.at(-1).received_at) : "—"}</b></div>
-            <div><span>Last seen</span><b title={occurrences[0]?.received_at}>{occurrences.length ? timeAgo(occurrences[0].received_at) : "—"}</b></div>
+            <div><span>Times seen</span><b>{total}</b></div>
+            <div><span>First seen</span><b title={state.data?.first_seen}>{state.data?.first_seen ? timeAgo(state.data.first_seen) : "—"}</b></div>
+            <div><span>Last seen</span><b title={state.data?.last_seen}>{state.data?.last_seen ? timeAgo(state.data.last_seen) : "—"}</b></div>
           </div>
-          {count > 1 && <Histogram events={occurrences} />}
-          <div className="occurrence-nav">
-            {newer ? <Link className="integrate-copy" href={errorDetailHref(newer)}>← Newer</Link> : <span className="integrate-copy disabled">← Newer</span>}
-            <span>{index >= 0 ? `${index + 1} of ${countLabel}` : "This event"}</span>
-            {older ? <Link className="integrate-copy" href={errorDetailHref(older)}>Older →</Link> : <span className="integrate-copy disabled">Older →</span>}
-          </div>
-          {environments.length > 1 && <Breakdown title="Environments" items={environments} total={count} />}
-          {attributeBreakdown.map(([key, items]) => <Breakdown key={key} title={key} items={items} total={count} />)}
-          {count > 1 && <ul className="occurrence-list">
-            {occurrences.slice(0, 8).map(item => <li key={item.id}>
-              {item.id === event.id ? <span className="occurrence-current"><span>{new Date(item.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span><small>Viewing</small></span>
-                : <Link href={errorDetailHref(item)}><span>{new Date(item.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span><small>{item.environment || ""}</small></Link>}
-            </li>)}
-          </ul>}
-          <Link className="subtle-button occurrence-all" href={similarHref}>View all in Errors <DashboardIcon name="arrow" size={13}/></Link>
+          {occurrences.length > 1 && <Histogram events={occurrences} />}
+          {state.data?.has_more && <p className="integrate-hint">Charts use the latest {occurrences.length} of {total} occurrences.</p>}
+          {attributeBreakdown.map(([key, items]) => <Breakdown key={key} title={key} items={items} total={occurrences.length} />)}
+          <ul className="occurrence-list">
+            {occurrences.slice(0, 10).map(item => {
+              const when = new Date(item.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+              return <li key={item.id}>
+                {item.trace_id
+                  ? <Link href={traceDetailHref(event.project_id, item.trace_id, item.span_id)}><span>{when}</span><small>View trace →</small></Link>
+                  : <span className="occurrence-current occurrence-plain"><span>{when}</span><small>{timeAgo(item.received_at)}</small></span>}
+              </li>;
+            })}
+          </ul>
+          {occurrences.length > 10 && <p className="integrate-hint">Showing the latest 10 of {total}.</p>}
+          <Link className="subtle-button occurrence-all" href={similarHref}>Similar errors from {event.service} <DashboardIcon name="arrow" size={13}/></Link>
         </>}
     </section>
   );
