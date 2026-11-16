@@ -147,7 +147,7 @@ function ErrorsView({ initial }) {
                   return <li key={event.id}>
                     <Link className="error-row" href={errorDetailHref(event)}>
                       <span className={"error-level " + levelClass(event.level)}>{event.level}</span>
-                      <span className="error-main"><b>{event.message}</b><small>{accountWide && <span className="error-project">{projectNames.get(event.project_id) || "Unknown project"}</span>}{event.service}{event.environment ? " · " + event.environment : ""}</small></span>
+                      <span className="error-main"><b>{event.message}{event.occurrence_count > 1 && <span className="error-count" title={`Seen ${event.occurrence_count} times`}>×{event.occurrence_count}</span>}</b><small>{accountWide && <span className="error-project">{projectNames.get(event.project_id) || "Unknown project"}</span>}{event.service}{event.environment ? " · " + event.environment : ""}</small></span>
                       <span className="error-time" title={new Date(event.timestamp).toLocaleString()}>{timeAgo(event.timestamp)}</span>
                       <DashboardIcon name="chevron" size={14}/>
                     </Link>

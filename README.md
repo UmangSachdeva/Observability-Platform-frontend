@@ -22,6 +22,14 @@ Tracewell is a self-hostable error-tracking platform in the spirit of Sentry. Se
 
 This repository is the **Next.js frontend**. It talks to a separate [Go + MongoDB API](https://github.com/UmangSachdeva/Observability-Platform) through a backend-for-frontend layer, so credentials never reach the browser.
 
+## Demo
+
+[![Tracewell demo: error list, occurrences and an OpenTelemetry trace waterfall](docs/demo/tracewell-demo.gif)](docs/demo/tracewell-demo.mp4)
+
+**[▶ Watch the full demo with voice-over](docs/demo/tracewell-demo.mp4)** (MP4, 1:20). It walks through the error list, server-side search, an error's stack trace and occurrences, the trace waterfall it links to, and the traces page.
+
+The demo data comes from the API repository's seeder (`go run ./examples/seed`).
+
 ## Features
 
 ### Error triage
